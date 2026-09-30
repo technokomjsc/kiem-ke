@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kiểm kê QR</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#fff; --text:#1f2933; --muted:#6b7785; --line:#e2e6ec;
+    --pri:#1a73e8; --pri-d:#1557b0; --ok:#188038; --warn:#b06000; --err:#c5221f; --dis:#eef0f3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:16px}
+  .top{position:sticky;top:0;z-index:5}
+  header{background:var(--pri);color:#fff;padding:12px 16px}
+  header h1{margin:0;font-size:18px}
+  #who{font-size:13px;opacity:.95;margin-top:3px}
+  nav{display:flex;background:#fff;border-bottom:1px solid var(--line)}
+  nav button{flex:1;padding:12px;border:0;background:none;font-size:15px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent}
+  nav button.active{color:var(--pri);border-bottom-color:var(--pri)}
+  main{padding:16px;max-width:560px;margin:0 auto}
+  .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .big{font-size:18px;font-weight:700}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+  select,input{width:100%;padding:12px;font-size:16px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text)}
+  input:disabled,select:disabled{background:var(--dis);color:#9aa3ad}
+  input.auto{font-style:italic;color:var(--pri-d);background:#f3f7fe}
+  .btn{display:block;width:100%;padding:14px;border:0;border-radius:10px;font-size:16px;font-weight:600;background:var(--pri);color:#fff;margin-top:14px}
+  .btn:active{background:var(--pri-d)}
+  .btn:disabled{background:#b8c4d6}
+  .btn.sec{background:#fff;color:var(--pri);border:1px solid var(--pri)}
+  .row{display:flex;gap:8px}
+  .row input{flex:1}
+  .row .btn{flex:0 0 90px;margin-top:0}
+  .msg{padding:12px;border-radius:8px;margin-top:12px;font-size:14px;line-height:1.5}
+  .msg.ok{background:#e6f4ea;color:#0d652d}
+  .msg.err{background:#fce8e6;color:var(--err)}
+  .msg.warn{background:#fef7e0;color:var(--warn)}
+  .msg.info{background:#e8f0fe;color:var(--pri-d)}
+  .hidden{display:none!important}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  table.info{width:100%;border-collapse:collapse;font-size:14px}
+  table.info td{padding:7px 0;border-bottom:1px solid var(--line);vertical-align:top}
+  table.info td:first-child{color:var(--muted);width:42%;padding-right:8px}
+  #reader{width:100%;margin-top:12px;border-radius:10px;overflow:hidden}
+  .pos{color:var(--ok);font-weight:700}
+  .neg{color:var(--err);font-weight:700}
+  #overlay{position:fixed;inset:0;background:rgba(255,255,255,.55);display:flex;align-items:center;justify-content:center;z-index:20}
+  .spin{width:42px;height:42px;border:4px solid #c8d6f0;border-top-color:var(--pri);border-radius:50%;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <header>
+    <h1>Kiểm kê bằng QR</h1>
+    <div id="who">Đang kiểm tra thiết bị…</div>
+  </header>
+  <nav>
+    <button data-tab="dk">Đăng ký</button>
+    <button data-tab="kk">Kiểm kê</button>
+  </nav>
+</div>
+
+<main>
+  <!-- ============ ĐĂNG KÝ ============ -->
+  <section id="tab-dk" class="hidden">
+    <div class="card">
+      <div class="big">Đăng ký người kiểm kê</div>
+      <label for="dkBoPhan">Bộ phận</label>
+      <select id="dkBoPhan"><option value="">— Chọn bộ phận —</option></select>
+      <label for="dkNV">Nhân viên</label>
+      <select id="dkNV" disabled><option value="">— Chọn nhân viên —</option></select>
+      <button class="btn" id="btnDangKy" disabled>Đăng ký thiết bị này</button>
+      <div class="hint">ID thiết bị này: <span id="devId"></span></div>
+      <div id="dkMsg"></div>
+    </div>
+  </section>
+
+  <!-- ============ KIỂM KÊ ============ -->
+  <section id="tab-kk" class="hidden">
+    <div id="kkBlock" class="card hidden">
+      <div class="msg warn">Thiết bị này chưa đăng ký nên chưa được kiểm kê.</div>
+      <button class="btn" id="btnDiDangKy">Đi tới Đăng ký</button>
+    </div>
+
+    <div id="kkMain" class="hidden">
+      <div class="card">
+        <label for="kkKho">Kho đang kiểm</label>
+        <select id="kkKho"><option value="">— Chọn kho —</option></select>
+
+        <button class="btn" id="btnQuet">📷 Quét mã QR</button>
+        <div id="reader" class="hidden"></div>
+        <button class="btn sec hidden" id="btnDungQuet">Dừng quét</button>
+
+        <label for="kkMa">Hoặc nhập mã SP</label>
+        <div class="row">
+          <input id="kkMa" placeholder="VD: 11E05000003" autocapitalize="characters" autocomplete="off">
+          <button class="btn" id="btnTim">Tìm</button>
+        </div>
+        <div id="timMsg"></div>
+      </div>
+
+      <div class="card hidden" id="spCard">
+        <table class="info" id="spInfo"></table>
+        <div id="spTrangThai"></div>
+
+        <div id="nhapBox">
+          <label for="inSL">SL kiểm kê (<span id="lbDvt"></span>)</label>
+          <input id="inSL" inputmode="numeric" placeholder="Số nguyên ≥ 0" autocomplete="off">
+          <label for="inDG">SL đóng gói kiểm kê (<span id="lbDvdg"></span>)</label>
+          <input id="inDG" inputmode="decimal" placeholder="Cho phép số thập phân" autocomplete="off">
+          <div class="hint" id="hsHint"></div>
+          <div id="clPreview" class="msg info hidden"></div>
+          <button class="btn" id="btnKiemKe" disabled>✔ Kiểm kê</button>
+        </div>
+        <div id="kkMsg"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="overlay" class="hidden"><div class="spin"></div></div>
+
+<script>
+/* ======================================================
+   CẤU HÌNH – DÁN URL WEB APP (…/exec) VÀO GIỮA 2 DẤU NHÁY
+   ====================================================== */
+const API_URL = 'DAN_URL_WEB_APP_VAO_DAY';
+
+/* ================= TIỆN ÍCH ================= */
+const $ = id => document.getElementById(id);
+const st = { nv: null, sp: null, nguon: null, scanner: null, khoDaNap: false };
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmt(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  return Number(n).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+}
+function fmtCL(x) {
+  x = Math.round(Number(x) * 1000) / 1000;
+  const cls = x > 0 ? 'pos' : x < 0 ? 'neg' : '';
+  const nhan = x > 0 ? ' (thừa)' : x < 0 ? ' (thiếu)' : ' (khớp)';
+  return `<span class="${cls}">${x > 0 ? '+' : ''}${fmt(x)}</span>${nhan}`;
+}
+function soNhap(x) { return String(Math.round(x * 1000) / 1000); }
+function hien(id, loai, html) { $(id).innerHTML = html ? `<div class="msg ${loai}">${html}</div>` : ''; }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+/* ================= ID THIẾT BỊ ================= */
+function taoId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 3 | 8)).toString(16);
+  });
+}
+let DEVICE_ID = lsGet('kk_device_id');
+if (!DEVICE_ID) { DEVICE_ID = taoId(); lsSet('kk_device_id', DEVICE_ID); }
+const LUU_DUOC_ID = lsGet('kk_device_id') === DEVICE_ID;
+
+/* ================= GỌI API ================= */
+async function api(action, data = {}) {
+  if (API_URL.startsWith('DAN_')) throw new Error('Chưa dán URL Web App vào biến API_URL trong index.html');
+  $('overlay').classList.remove('hidden');
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action, deviceId: DEVICE_ID }, data))
+    });
+    let j;
+    try { j = await res.json(); }
+    catch (e) { throw new Error('Máy chủ trả về dữ liệu không đúng. Kiểm tra lại URL Web App / quyền truy cập.'); }
+    if (!j.ok) throw new Error(j.error || 'Lỗi không xác định');
+    return j.data;
+  } catch (e) {
+    if (e instanceof TypeError) throw new Error('Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.');
+    throw e;
+  } finally {
+    $('overlay').classList.add('hidden');
+  }
+}
+
+/* ================= KHỞI ĐỘNG & TAB ================= */
+function capNhatWho() {
+  $('who').textContent = st.nv
+    ? `Người kiểm kê: ${st.nv.hoTen} (${st.nv.maNV} – ${st.nv.boPhan})`
+    : 'Thiết bị chưa đăng ký';
+}
+
+async function chuyenTab(t) {
+  await dungQuet();
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  $('tab-dk').classList.toggle('hidden', t !== 'dk');
+  $('tab-kk').classList.toggle('hidden', t !== 'kk');
+  if (t === 'kk') moKiemKe();
+}
+
+async function khoiDong() {
+  $('devId').textContent = DEVICE_ID.slice(0, 8) + '…';
+  if (!LUU_DUOC_ID) {
+    hien('dkMsg', 'warn', 'Trình duyệt không lưu được ID thiết bị (có thể đang ở chế độ ẩn danh). ' +
+      'Hãy mở trang bằng chế độ thường, nếu không mỗi lần mở lại sẽ phải đăng ký lại.');
+  }
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => chuyenTab(b.dataset.tab));
+  try {
+    st.nv = await api('toiLaAi');
+    capNhatWho();
+  } catch (e) {
+    $('who').textContent = '⚠ ' + e.message;
+  }
+  chuyenTab(st.nv ? 'kk' : 'dk');
+  napBoPhan();
+}
+
+/* ================= ĐĂNG KÝ ================= */
+async function napBoPhan() {
+  try {
+    const ds = await api('danhSachBoPhan');
+    $('dkBoPhan').innerHTML = '<option value="">— Chọn bộ phận —</option>' +
+      ds.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  } catch (e) { hien('dkMsg', 'err', esc(e.message)); }
+}
+
+$('dkBoPhan').onchange = async () => {
+  const bp = $('dkBoPhan').value;
+  $('dkNV').innerHTML = '<option value="">— Chọn nhân viên —</option>';
+  $('dkNV').disabled = true;
+  $('btnDangKy').disabled = true;
+  if (!bp) return;
+  try {
+    const ds = await api('danhSachNV', { boPhan: bp });
+    $('dkNV').innerHTML = '<option value="">— Chọn nhân viên —</option>' + ds.map(n =>
+      `<option value="${esc(n.maNV)}" data-co="${n.daDangKy ? 1 : 0}">` +
+      `${esc(n.maNV)} – ${esc(n.hoTen)}${n.daDangKy ? ' (đã có thiết bị)' : ''}</option>`).join('');
+    $('dkNV').disabled = false;
+  } catch (e) { hien('dkMsg', 'err', esc(e.message)); }
+};
+
+$('dkNV').onchange = () => { $('btnDangKy').disabled = !$('dkNV').value; };
+
+$('btnDangKy').onclick = async () => {
+  const opt = $('dkNV').selectedOptions[0];
+  const ma = $('dkNV').value;
+  if (!ma) return;
+  if (opt.dataset.co === '1' && !confirm(
+      'Nhân viên này đã đăng ký một thiết bị khác.\nĐăng ký lại sẽ THAY THẾ thiết bị cũ. Tiếp tục?')) return;
+  try {
+    const r = await api('dangKy', { maNV: ma });
+    st.nv = { maNV: r.maNV, hoTen: r.hoTen, boPhan: r.boPhan };
+    capNhatWho();
+    hien('dkMsg', 'ok', `✔ Đã đăng ký thiết bị này cho <b>${esc(r.hoTen)}</b>. Đang chuyển sang Kiểm kê…`);
+    setTimeout(() => chuyenTab('kk'), 1200);
+  } catch (e) { hien('dkMsg', 'err', esc(e.message)); }
+};
+
+$('btnDiDangKy').onclick = () => chuyenTab('dk');
+
+/* ================= KIỂM KÊ: KHO ================= */
+async function moKiemKe() {
+  $('kkBlock').classList.toggle('hidden', !!st.nv);
+  $('kkMain').classList.toggle('hidden', !st.nv);
+  if (!st.nv || st.khoDaNap) return;
+  try {
+    const ds = await api('danhSachKho');
+    $('kkKho').innerHTML = '<option value="">— Chọn kho —</option>' +
+      ds.map(k => `<option value="${esc(k.maKho)}">${esc(k.maKho)} – ${esc(k.tenKho)}</option>`).join('');
+    const luu = lsGet('kk_kho');
+    if (luu && ds.some(k => k.maKho === luu)) $('kkKho').value = luu;
+    st.khoDaNap = true;
+  } catch (e) { hien('timMsg', 'err', esc(e.message)); }
+}
+
+$('kkKho').onchange = () => { lsSet('kk_kho', $('kkKho').value); anSP(); hien('timMsg'); };
+
+function canKho() {
+  if (!$('kkKho').value) { hien('timMsg', 'warn', 'Vui lòng chọn kho trước.'); return false; }
+  return true;
+}
+
+/* ================= KIỂM KÊ: QUÉT QR ================= */
+$('btnQuet').onclick = async () => {
+  if (!canKho()) return;
+  if (typeof Html5Qrcode === 'undefined') {
+    hien('timMsg', 'err', 'Chưa tải được thư viện quét QR. Kiểm tra mạng hoặc nhập mã bằng tay.');
+    return;
+  }
+  hien('timMsg'); anSP();
+  $('reader').classList.remove('hidden');
+  $('btnDungQuet').classList.remove('hidden');
+  $('btnQuet').classList.add('hidden');
+  try {
+    st.scanner = st.scanner || new Html5Qrcode('reader');
+    await st.scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
+      async txt => {
+        await dungQuet();
+        if (navigator.vibrate) navigator.vibrate(80);
+        $('kkMa').value = txt.trim();
+        timSP();
+      },
+      () => {}
+    );
+  } catch (e) {
+    await dungQuet();
+    hien('timMsg', 'err', 'Không mở được camera: ' + esc(e && e.message ? e.message : e) +
+      '<br>Hãy cho phép trình duyệt dùng camera, hoặc nhập mã bằng tay.');
+  }
+};
+
+async function dungQuet() {
+  if (st.scanner && st.scanner.isScanning) { try { await st.scanner.stop(); } catch (e) {} }
+  $('reader').classList.add('hidden');
+  $('btnDungQuet').classList.add('hidden');
+  $('btnQuet').classList.remove('hidden');
+}
+$('btnDungQuet').onclick = dungQuet;
+
+/* ================= KIỂM KÊ: TÌM SẢN PHẨM ================= */
+$('btnTim').onclick = () => timSP();
+$('kkMa').addEventListener('keydown', e => { if (e.key === 'Enter') timSP(); });
+
+async function timSP() {
+  if (!canKho()) return;
+  const ma = $('kkMa').value.trim();
+  if (!ma) { hien('timMsg', 'warn', 'Hãy quét hoặc nhập mã SP.'); return; }
+  hien('timMsg'); anSP();
+  try {
+    const d = await api('timSP', { ma, kho: $('kkKho').value });
+    if (!d.timThay) {
+      hien('timMsg', 'err', d.khoKhac.length
+        ? `Mã <b>${esc(d.ma)}</b> không có trong kho đang chọn.<br>Mã này có ở kho: <b>${d.khoKhac.map(esc).join(', ')}</b>.`
+        : `Không tìm thấy mã <b>${esc(d.ma)}</b> trong danh sách kiểm kê.`);
+      return;
+    }
+    hienSP(d);
+  } catch (e) { hien('timMsg', 'err', esc(e.message)); }
+}
+
+function anSP() { $('spCard').classList.add('hidden'); st.sp = null; st.nguon = null; }
+
+function hienSP(d) {
+  st.sp = d; st.nguon = null;
+  const coHS = d.heSo !== null && d.heSo !== undefined;
+  const dong = [
+    ['Mã SP', `<b>${esc(d.ma)}</b>`],
+    ['Tên SP', esc(d.ten)],
+    ['Kho', esc(d.kho + ' – ' + d.tenKho)],
+    ['SL sổ sách', `<b>${fmt(d.slSoSach)}</b> ${esc(d.dvt)}`],
+    ['ĐV đóng gói', coHS ? esc(d.dvDongGoi) : '(không có)'],
+    ['Hệ số', coHS ? `1 ${esc(d.dvt)} = ${fmt(d.heSo)} ${esc(d.dvDongGoi)}` : '—'],
+    ['SL đóng gói sổ sách', coHS ? `${fmt(d.slDGSoSach)} ${esc(d.dvDongGoi)}` : '—']
+  ];
+  $('spInfo').innerHTML = dong.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
+
+  $('lbDvt').textContent = d.dvt;
+  $('lbDvdg').textContent = coHS ? d.dvDongGoi : 'không áp dụng';
+  $('inSL').value = ''; $('inDG').value = '';
+  $('inSL').classList.remove('auto'); $('inDG').classList.remove('auto');
+  $('inDG').disabled = !coHS;
+  $('hsHint').textContent = coHS
+    ? 'Chỉ cần nhập 1 ô, ô còn lại tự quy đổi theo hệ số.'
+    : 'Mã này không có hệ số quy đổi – chỉ nhập SL kiểm kê.';
+  $('clPreview').classList.add('hidden');
+  $('btnKiemKe').disabled = true;
+  hien('kkMsg');
+
+  if (d.daKiemKe) {
+    $('spTrangThai').innerHTML =
+      `<div class="msg err">⛔ Đã kiểm kê bởi <b>${esc(d.tenNV)}</b> (${esc(d.maNV)}) lúc ${esc(d.thoiGian)}.<br>` +
+      `SL kiểm kê: <b>${fmt(d.slKiemKe)}</b>${coHS ? ` – SL đóng gói: <b>${fmt(d.slDGKiemKe)}</b>` : ''}.<br>` +
+      `Không được ghi đè.</div>`;
+    $('nhapBox').classList.add('hidden');
+  } else {
+    $('spTrangThai').innerHTML = '';
+    $('nhapBox').classList.remove('hidden');
+  }
+  $('spCard').classList.remove('hidden');
+  $('spCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!d.daKiemKe) setTimeout(() => $('inSL').focus(), 300);
+}
+
+/* ================= KIỂM KÊ: NHẬP SỐ & QUY ĐỔI ================= */
+function locSo(el, thapPhan) {
+  let v = el.value.replace(thapPhan ? /[^\d.,]/g : /[^\d]/g, '');
+  if (thapPhan) {
+    v = v.replace(/,/g, '.');
+    const i = v.indexOf('.');
+    if (i >= 0) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
+  }
+  if (el.value !== v) el.value = v;
+  return v;
+}
+
+$('inSL').addEventListener('input', () => {
+  const d = st.sp; if (!d) return;
+  const v = locSo($('inSL'), false);
+  const hs = d.heSo;
+  $('inSL').classList.remove('auto');
+  if (v === '') {
+    if (st.nguon === 'sl') { st.nguon = null; if (hs !== null) { $('inDG').value = ''; $('inDG').classList.remove('auto'); } }
+  } else {
+    st.nguon = 'sl';
+    if (hs !== null) { $('inDG').value = soNhap(Number(v) * hs); $('inDG').classList.add('auto'); }
+  }
+  capNhatPreview();
+});
+
+$('inDG').addEventListener('input', () => {
+  const d = st.sp; if (!d || d.heSo === null) return;
+  const v = locSo($('inDG'), true);
+  $('inDG').classList.remove('auto');
+  if (v === '' || v === '.') {
+    if (st.nguon === 'dg') { st.nguon = null; $('inSL').value = ''; $('inSL').classList.remove('auto'); }
+  } else {
+    st.nguon = 'dg';
+    $('inSL').value = soNhap(Number(v) / d.heSo);
+    $('inSL').classList.add('auto');
+  }
+  capNhatPreview();
+});
+
+function capNhatPreview() {
+  const d = st.sp;
+  if (!d || !st.nguon) { $('clPreview').classList.add('hidden'); $('btnKiemKe').disabled = true; return; }
+  const coHS = d.heSo !== null;
+  const sl = Number($('inSL').value);
+  let h = `Chênh lệch SL: ${fmtCL(sl - d.slSoSach)} ${esc(d.dvt)}`;
+  if (coHS) h += `<br>Chênh lệch ĐG: ${fmtCL(Number($('inDG').value) - d.slDGSoSach)} ${esc(d.dvDongGoi)}`;
+  if (st.nguon === 'dg' && !Number.isInteger(Math.round(sl * 1000) / 1000)) {
+    h += `<br>⚠ SL quy đổi ra số lẻ (${fmt(sl)}) – kiểm tra lại cân / đếm.`;
+  }
+  $('clPreview').innerHTML = h;
+  $('clPreview').classList.remove('hidden');
+  $('btnKiemKe').disabled = false;
+}
+
+/* ================= KIỂM KÊ: GHI ================= */
+$('btnKiemKe').onclick = async () => {
+  const d = st.sp;
+  if (!d || !st.nguon) return;
+  const coHS = d.heSo !== null;
+  const payload = { ma: d.ma, kho: d.kho };
+  if (st.nguon === 'sl') payload.slKiemKe = $('inSL').value;
+  else payload.slDGKiemKe = $('inDG').value;
+
+  const tom = `Xác nhận kiểm kê ${d.ma} – kho ${d.kho}\n` +
+              `SL: ${$('inSL').value} ${d.dvt}` +
+              (coHS ? `\nSL đóng gói: ${$('inDG').value} ${d.dvDongGoi}` : '');
+  if (!confirm(tom)) return;
+
+  try {
+    const r = await api('kiemKe', payload);
+    $('nhapBox').classList.add('hidden');
+    hien('kkMsg', 'ok',
+      `✔ Đã ghi kiểm kê <b>${esc(r.ma)}</b> lúc ${esc(r.thoiGian)}.<br>` +
+      `SL: <b>${fmt(r.slKiemKe)}</b> – chênh lệch ${fmtCL(r.chenhLech)}` +
+      (r.chenhLechDG !== null ? `<br>SL ĐG: <b>${fmt(r.slDGKiemKe)}</b> – chênh lệch ${fmtCL(r.chenhLechDG)}` : '') +
+      `<br><br>Quét mã tiếp theo ở phía trên.`);
+    $('kkMa').value = '';
+    st.nguon = null;
+  } catch (e) { hien('kkMsg', 'err', esc(e.message)); }
+};
+
+khoiDong();
+</script>
+</body>
+</html>
