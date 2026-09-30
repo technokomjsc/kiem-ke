@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kiểm kê QR</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#f4f6fa; --card:#fff; --text:#1f2933; --muted:#6b7785; --line:#e2e6ec;
@@ -99,6 +100,16 @@
     .kpi.main{grid-column:auto}
     .grid2{grid-template-columns:1fr 1fr}
   }
+  /* biểu đồ */
+  .chart-box{position:relative;width:100%}
+  .donut{position:relative;height:210px;max-width:260px;margin:0 auto}
+  .donut .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .donut .c b{font-size:30px;font-weight:800;line-height:1}
+  .donut .c span{font-size:12px;color:var(--muted);margin-top:4px}
+  .lg{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin-top:12px;font-size:13px}
+  .lg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  details.more{margin-top:10px;font-size:14px}
+  details.more summary{cursor:pointer;color:var(--pri);font-weight:600;font-size:13.5px}
   #overlay{position:fixed;inset:0;background:rgba(255,255,255,.55);display:flex;align-items:center;justify-content:center;z-index:20}
   .spin{width:42px;height:42px;border:4px solid #c8d6f0;border-top-color:var(--pri);border-radius:50%;animation:s 1s linear infinite}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -138,10 +149,8 @@
         <button class="btn sec hidden" id="btnDungQuet">Dừng quét</button>
 
         <label for="kkMa">Hoặc nhập mã SP</label>
-        <div class="row">
-          <input id="kkMa" placeholder="VD: 11E05000003" autocapitalize="characters" autocomplete="off">
-          <button class="btn" id="btnTim">Tìm</button>
-        </div>
+        <input id="kkMa" placeholder="VD: 11E05000003" autocapitalize="characters" autocomplete="off">
+        <button class="btn" id="btnTim">🔍 Tìm</button>
         <div id="timMsg"></div>
       </div>
 
@@ -210,11 +219,27 @@
     </div>
     <div class="kpis" id="tqKpi"></div>
 
-    <div class="grid2" style="margin-top:14px">
-      <div class="card"><h2>Tiến độ theo kho</h2><div id="tqKho"></div>
+    <div class="grid2 bd" style="margin-top:14px">
+      <div class="card"><h2>Tiến độ toàn bộ</h2>
+        <div class="donut"><canvas id="chTienDo"></canvas><div class="c"><b id="chTienDoPct">0%</b><span>hoàn thành</span></div></div>
+        <div class="lg" id="lgTienDo"></div>
+      </div>
+      <div class="card"><h2>Kết quả các mã đã kiểm</h2>
+        <div class="donut"><canvas id="chKetQua"></canvas><div class="c"><b id="chKetQuaPct">0%</b><span>khớp sổ sách</span></div></div>
+        <div class="lg" id="lgKetQua"></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card"><h2>Tiến độ theo kho</h2>
+        <div class="chart-box bd" id="boxKho"><canvas id="chKho"></canvas></div>
+        <details class="more"><summary>Xem chi tiết từng kho</summary><div id="tqKho"></div></details>
         <div class="hint">Chỉ tính các mã có SL sổ sách &gt; 0. Mã sổ sách = 0 đã kiểm và hàng phát sinh được ghi riêng.</div>
       </div>
-      <div class="card"><h2>Tiến độ theo nhân viên</h2><div class="tbl" id="tqNV"></div></div>
+      <div class="card"><h2>Tiến độ theo nhân viên</h2>
+        <div class="chart-box bd" id="boxNV"><canvas id="chNV"></canvas></div>
+        <details class="more"><summary>Xem bảng chi tiết</summary><div class="tbl" id="tqNV"></div></details>
+      </div>
     </div>
 
     <div class="card">
@@ -828,6 +853,8 @@ function veTongQuan() {
         `<td class="num">${fmt(n.soCL)}</td><td class="muted">${esc(n.cuoi)}</td></tr>`).join('') + `</table>`
     : '<div class="muted">Chưa có ai kiểm kê.</div>';
 
+  veBieuDo(d);
+
   $('cThieu').textContent = d.thieu.length;
   $('cThua').textContent = d.thua.length;
   veChenhLech();
@@ -840,6 +867,89 @@ function veTongQuan() {
         `<td class="num"><b>${fmt(x.sl)}</b> ${esc(x.dvt)}</td><td>${esc(x.tenNV)}<div class="muted" style="font-size:12px">${esc(x.tg)}</div></td>` +
         `<td>${esc(x.ghiChu)}</td></tr>`).join('') + `</table>`
     : '<div class="muted">Chưa có hàng phát sinh.</div>';
+}
+
+/* ---------- Biểu đồ (Chart.js) ---------- */
+const MAU = { da:'#188038', chua:'#dfe3e9', khop:'#34a853', thieu:'#ea4335', thua:'#fbbc04', ps:'#8430ce', pri:'#1a73e8' };
+st.charts = {};
+function veChart(id, cfg) {
+  const cu = st.charts[id];
+  if (cu) cu.destroy();
+  cfg.options = Object.assign({ responsive:true, maintainAspectRatio:false, animation: cu ? false : { duration:700 } }, cfg.options || {});
+  st.charts[id] = new Chart($(id), cfg);
+}
+function chuThich(id, ds) {
+  $(id).innerHTML = ds.map(x => `<span><i style="background:${x.mau}"></i>${esc(x.ten)}: <b>${fmt(x.gt)}</b></span>`).join('');
+}
+function catTen(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+function veBieuDo(d) {
+  if (typeof Chart === 'undefined') {           // không tải được thư viện → ẩn biểu đồ, vẫn dùng bảng
+    document.querySelectorAll('.bd').forEach(e => e.classList.add('hidden'));
+    document.querySelectorAll('details.more').forEach(e => e.open = true);
+    return;
+  }
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = '#5f6b7a';
+  Chart.defaults.locale = 'vi-VN';
+  const t = d.tong;
+  const donutOpt = { cutout:'70%', plugins:{ legend:{ display:false },
+    tooltip:{ callbacks:{ label: c => ` ${c.label}: ${fmt(c.raw)} mã` } } } };
+
+  // 1) Tiến độ toàn bộ
+  const chua = Math.max(0, t.tong - t.da);
+  veChart('chTienDo', { type:'doughnut',
+    data:{ labels:['Đã kiểm','Chưa kiểm'], datasets:[{ data:[t.da, chua], backgroundColor:[MAU.da, MAU.chua], borderWidth:2, borderColor:'#fff' }] },
+    options: donutOpt });
+  $('chTienDoPct').textContent = fmt(t.pct) + '%';
+  chuThich('lgTienDo', [{ten:'Đã kiểm', gt:t.da, mau:MAU.da}, {ten:'Chưa kiểm', gt:chua, mau:'#b8c0cc'}]);
+
+  // 2) Kết quả: khớp / thiếu / thừa
+  const khop = Math.max(0, t.da - t.soThieu - t.soThua);
+  const tongKQ = khop + t.soThieu + t.soThua;
+  veChart('chKetQua', { type:'doughnut',
+    data:{ labels:['Khớp','Thiếu','Thừa'], datasets:[{ data:[khop, t.soThieu, t.soThua],
+      backgroundColor:[MAU.khop, MAU.thieu, MAU.thua], borderWidth:2, borderColor:'#fff' }] },
+    options: donutOpt });
+  $('chKetQuaPct').textContent = tongKQ ? fmt(Math.round(khop / tongKQ * 1000) / 10) + '%' : '—';
+  chuThich('lgKetQua', [{ten:'Khớp', gt:khop, mau:MAU.khop}, {ten:'Thiếu', gt:t.soThieu, mau:MAU.thieu}, {ten:'Thừa', gt:t.soThua, mau:MAU.thua}]);
+
+  // 3) Tiến độ theo kho: cột ngang chồng (đã / chưa)
+  const kho = d.kho;
+  $('boxKho').style.height = Math.max(160, kho.length * 46 + 60) + 'px';
+  veChart('chKho', { type:'bar',
+    data:{ labels: kho.map(k => [k.maKho + ' – ' + fmt(k.pct) + '%', catTen(k.tenKho, 24)]),
+      datasets:[
+        { label:'Đã kiểm', data: kho.map(k => k.da), backgroundColor: MAU.da, borderRadius:6, barThickness:22 },
+        { label:'Chưa kiểm', data: kho.map(k => Math.max(0, k.tong - k.da)), backgroundColor: MAU.chua, borderRadius:6, barThickness:22 } ] },
+    options:{ indexAxis:'y',
+      scales:{ x:{ stacked:true, grid:{ color:'#eef1f5' }, ticks:{ precision:0 } }, y:{ stacked:true, grid:{ display:false }, ticks:{ font:{ size:12 } } } },
+      plugins:{ legend:{ position:'bottom', labels:{ usePointStyle:true, pointStyle:'rectRounded' } },
+        tooltip:{ callbacks:{ title: c => kho[c[0].dataIndex].maKho + ' – ' + kho[c[0].dataIndex].tenKho,
+          label: c => ` ${c.dataset.label}: ${fmt(c.raw)} mã`,
+          footer: c => { const k = kho[c[0].dataIndex]; return `Hoàn thành ${fmt(k.pct)}% · ${fmt(k.da)}/${fmt(k.tong)} mã` + (k.ps ? ` · ${fmt(k.ps)} phát sinh` : ''); } } } } } });
+
+  // 4) Theo nhân viên: cột ngang (số mã đã kiểm + phát sinh)
+  const nv = d.nv.slice().sort((a, b) => (b.soMa + b.soPS) - (a.soMa + a.soPS));
+  if (!nv.length) {
+    $('boxNV').style.height = 'auto';
+    if (st.charts.chNV) { st.charts.chNV.destroy(); delete st.charts.chNV; }
+    $('boxNV').innerHTML = '<div class="muted">Chưa có ai kiểm kê.</div>';
+  } else {
+    if (!$('chNV')) $('boxNV').innerHTML = '<canvas id="chNV"></canvas>';
+    $('boxNV').style.height = Math.max(160, nv.length * 40 + 60) + 'px';
+    veChart('chNV', { type:'bar',
+      data:{ labels: nv.map(n => catTen(n.tenNV, 22)),
+        datasets:[
+          { label:'Mã đã kiểm', data: nv.map(n => n.soMa), backgroundColor: MAU.pri, borderRadius:6, barThickness:20 },
+          { label:'Phát sinh', data: nv.map(n => n.soPS), backgroundColor: MAU.ps, borderRadius:6, barThickness:20 } ] },
+      options:{ indexAxis:'y',
+        scales:{ x:{ stacked:true, grid:{ color:'#eef1f5' }, ticks:{ precision:0 } }, y:{ stacked:true, grid:{ display:false } } },
+        plugins:{ legend:{ position:'bottom', labels:{ usePointStyle:true, pointStyle:'rectRounded' } },
+          tooltip:{ callbacks:{ title: c => nv[c[0].dataIndex].tenNV + ' (' + nv[c[0].dataIndex].maNV + ')',
+            label: c => ` ${c.dataset.label}: ${fmt(c.raw)}`,
+            footer: c => { const n = nv[c[0].dataIndex]; return `Có chênh lệch: ${fmt(n.soCL)} · Lần cuối: ${n.cuoi}`; } } } } } });
+  }
 }
 
 function veChenhLech() {
